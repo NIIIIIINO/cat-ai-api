@@ -1,0 +1,14 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'build',
+        '-t',
+        'asia-southeast1-docker.pkg.dev/smart-cat-water-bowl/cat-ai-api/trainer',
+        '-f',
+        'Dockerfile.trainer',
+        '.'
+      ]
+
+images:
+  - 'asia-southeast1-docker.pkg.dev/smart-cat-water-bowl/cat-ai-api/trainer'
