@@ -7,4 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "trainer.py"]
+ENV PORT=8080
+
+CMD ["gunicorn", "-w", "1", "-b", ":8080", "main:app"]
