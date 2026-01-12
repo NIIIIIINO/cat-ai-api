@@ -1,4 +1,3 @@
-import io
 import os
 import numpy as np
 import cv2
@@ -7,23 +6,26 @@ from flask import Flask, request, jsonify
 from embeddings import get_embedding
 from identify_cat import identify_cat
 
-# optional YOLO
+# ================= CONFIG =================
 USE_YOLO_DEFAULT = True
 YOLO_MODEL_PATH = "yolov8n.pt"
 
 app = Flask(__name__)
 
-# ---------- optional YOLO ----------
-yolo_model = None
-if os.path.exists(YOLO_MODEL_PATH):
-    try:
+# ================= YOLO (lazy) =================
+_yolo_model = None
+
+def get_yolo():
+    global _yolo_model
+    if _yolo_model is None:
         from ultralytics import YOLO
-        yolo_model = YOLO(YOLO_MODEL_PATH)
-    except Exception:
-        yolo_model = None
+        print("⏳ Loading YOLO...")
+        _yolo_model = YOLO(YOLO_MODEL_PATH)
+        print("✅ YOLO ready")
+    return _yolo_model
 
 
-# ---------- utils ----------
+# ================= utils =================
 def read_image(file) -> np.ndarray:
     data = np.frombuffer(file.read(), np.uint8)
     img = cv2.imdecode(data, cv2.IMREAD_COLOR)
@@ -36,16 +38,14 @@ def detect_cats(image: np.ndarray):
     """
     return list of cropped RGB images
     """
-    if yolo_model is None:
-        return [image]
-
-    results = yolo_model(image, conf=0.4, verbose=False)
+    yolo = get_yolo()
+    results = yolo(image, conf=0.4, verbose=False)
     crops = []
 
     for r in results:
         for box in r.boxes:
             cls = int(box.cls[0])
-            if yolo_model.names[cls] != "cat":
+            if yolo.names[cls] != "cat":
                 continue
 
             x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -58,18 +58,16 @@ def detect_cats(image: np.ndarray):
 
 def load_user_cat_bank(user_uid: str):
     """
-    TODO:
-    - ดึง embedding ของ user_uid จาก Cloud Storage / Firestore
-    ตอนนี้ mock structure ไว้ก่อน
+    TODO: ดึง embedding จาก Firestore / GCS
+    structure:
+    {
+        cat_uid: [emb1, emb2, ...]
+    }
     """
-    # structure:
-    # {
-    #   cat_uid: [emb1, emb2, ...]
-    # }
-    return {}   # 🔥 คุณจะเสียบ logic จริงตรงนี้
+    return {}  # ← เสียบ logic จริงตรงนี้
 
 
-# ---------- routes ----------
+# ================= routes =================
 @app.route("/", methods=["GET"])
 def health():
     return "OK"
@@ -84,19 +82,20 @@ def predict():
     if not user_uid:
         return jsonify({"error": "user_uid required"}), 400
 
-    use_yolo = request.form.get("use_yolo", str(USE_YOLO_DEFAULT)).lower() == "true"
+    use_yolo = request.form.get(
+        "use_yolo",
+        str(USE_YOLO_DEFAULT)
+    ).lower() == "true"
 
     try:
         image = read_image(request.files["image"])
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-    # 1️⃣ load user cat embeddings
     cat_bank = load_user_cat_bank(user_uid)
     if not cat_bank:
         return jsonify({"error": "no cats registered for this user"}), 404
 
-    # 2️⃣ detect or direct embedding
     crops = detect_cats(image) if use_yolo else [image]
 
     results = []
@@ -118,5 +117,5 @@ def predict():
     })
 
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+# ❌ ไม่ใช้ app.run() ตอน deploy
+# gunicorn จะเป็นคนเรียก
