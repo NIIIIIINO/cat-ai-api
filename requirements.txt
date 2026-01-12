@@ -1,8 +1,8 @@
-flask
-gunicorn
-numpy
+google-cloud-firestore
+google-cloud-storage
 opencv-python-headless
+numpy
 torch
 torchvision
-scikit-learn
 ultralytics
+scikit-learn
