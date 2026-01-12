@@ -1,2 +1,8 @@
 flask
 gunicorn
+numpy
+opencv-python-headless
+torch
+torchvision
+scikit-learn
+ultralytics
