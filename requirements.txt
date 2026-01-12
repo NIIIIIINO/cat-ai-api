@@ -7,3 +7,5 @@ torch
 torchvision
 ultralytics
 scikit-learn
+gunicorn
+numpy
