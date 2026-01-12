@@ -12,18 +12,21 @@ YOLO_CONF = 0.4
 
 app = Flask(__name__)
 
-# ---------- LOAD YOLO ONCE ----------
+# ---------- LAZY YOLO (สำคัญมากสำหรับ Cloud Run) ----------
 yolo_model = None
-try:
-    from ultralytics import YOLO
-    if os.path.exists(YOLO_MODEL_PATH):
+
+def get_yolo():
+    """
+    โหลด YOLO ตอนมี request ครั้งแรกเท่านั้น
+    เพื่อให้ Cloud Run เปิด port ทัน
+    """
+    global yolo_model
+    if yolo_model is None:
+        from ultralytics import YOLO
+        print("⏳ Loading YOLO model...")
         yolo_model = YOLO(YOLO_MODEL_PATH)
         print("✅ YOLO loaded")
-    else:
-        print("⚠️ YOLO model not found")
-except Exception as e:
-    print("❌ YOLO load failed:", e)
-    yolo_model = None
+    return yolo_model
 
 
 # ---------- UTILS ----------
@@ -39,16 +42,14 @@ def detect_cat_crops(image):
     """
     return list of cropped RGB images
     """
-    if yolo_model is None:
-        return []
+    model = get_yolo()
+    results = model(image, conf=YOLO_CONF, verbose=False)
 
-    results = yolo_model(image, conf=YOLO_CONF, verbose=False)
     crops = []
-
     for r in results:
         for box in r.boxes:
             cls = int(box.cls[0])
-            if yolo_model.names[cls] != "cat":
+            if model.names[cls] != "cat":
                 continue
 
             x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -63,9 +64,9 @@ def load_user_cat_bank(user_uid):
     """
     TODO:
     ดึง embeddings ของแมวจาก Cloud Storage / Firestore
-    ตอนนี้เว้นไว้ก่อน (จะไม่พัง)
+    ตอนนี้เว้นไว้ก่อน
     """
-    return {}   # structure: {cat_uid: [emb1, emb2, ...]}
+    return {}   # {cat_uid: [emb1, emb2, ...]}
 
 
 # ---------- ROUTES ----------
@@ -89,23 +90,17 @@ def predict():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-    # --- YOLO FIRST ---
+    # --- YOLO ---
     crops = detect_cat_crops(image)
-
     if not crops:
-        return jsonify({
-            "status": "no_cat_detected"
-        })
+        return jsonify({"status": "no_cat_detected"})
 
     # --- load user cat embeddings ---
     cat_bank = load_user_cat_bank(user_uid)
     if not cat_bank:
-        return jsonify({
-            "status": "no_cat_registered"
-        })
+        return jsonify({"status": "no_cat_registered"})
 
     results = []
-
     for idx, crop in enumerate(crops):
         emb = get_embedding(crop)
         cat_uid, score = identify_cat(emb, cat_bank)
@@ -123,5 +118,7 @@ def predict():
     })
 
 
+# ---------- ENTRYPOINT ----------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
